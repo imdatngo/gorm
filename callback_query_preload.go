@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/lib/pq"
 )
 
 // preloadCallback used to preload associations
@@ -144,8 +146,17 @@ func (scope *Scope) handleHasOnePreload(field *Field, conditions []interface{}) 
 	preloadDB, preloadConditions := scope.generatePreloadDBWithConditions(conditions)
 
 	// find relations
-	query := fmt.Sprintf("%v IN (%v)", toQueryCondition(scope, relation.ForeignDBNames), toQueryMarks(primaryKeys))
-	values := toQueryValues(primaryKeys)
+	var (
+		query  string
+		values []interface{}
+	)
+	if scope.db.dialect.GetName() == "postgres" && len(relation.ForeignDBNames) == 1 {
+		query = fmt.Sprintf("%v = ANY(?)", toQueryCondition(scope, relation.ForeignDBNames))
+		values = []interface{}{pq.Array(toQueryValues(primaryKeys))}
+	} else {
+		query = fmt.Sprintf("%v IN (%v)", toQueryCondition(scope, relation.ForeignDBNames), toQueryMarks(primaryKeys))
+		values = toQueryValues(primaryKeys)
+	}
 	if relation.PolymorphicType != "" {
 		query += fmt.Sprintf(" AND %v = ?", scope.Quote(relation.PolymorphicDBName))
 		values = append(values, relation.PolymorphicValue)
@@ -196,8 +207,17 @@ func (scope *Scope) handleHasManyPreload(field *Field, conditions []interface{})
 	preloadDB, preloadConditions := scope.generatePreloadDBWithConditions(conditions)
 
 	// find relations
-	query := fmt.Sprintf("%v IN (%v)", toQueryCondition(scope, relation.ForeignDBNames), toQueryMarks(primaryKeys))
-	values := toQueryValues(primaryKeys)
+	var (
+		query  string
+		values []interface{}
+	)
+	if scope.db.dialect.GetName() == "postgres" && len(relation.ForeignDBNames) == 1 {
+		query = fmt.Sprintf("%v = ANY(?)", toQueryCondition(scope, relation.ForeignDBNames))
+		values = []interface{}{pq.Array(toQueryValues(primaryKeys))}
+	} else {
+		query = fmt.Sprintf("%v IN (%v)", toQueryCondition(scope, relation.ForeignDBNames), toQueryMarks(primaryKeys))
+		values = toQueryValues(primaryKeys)
+	}
 	if relation.PolymorphicType != "" {
 		query += fmt.Sprintf(" AND %v = ?", scope.Quote(relation.PolymorphicDBName))
 		values = append(values, relation.PolymorphicValue)
@@ -249,8 +269,19 @@ func (scope *Scope) handleBelongsToPreload(field *Field, conditions []interface{
 	}
 
 	// find relations
+	var (
+		query  string
+		values []interface{}
+	)
+	if scope.db.dialect.GetName() == "postgres" && len(relation.ForeignDBNames) == 1 {
+		query = fmt.Sprintf("%v = ANY(?)", toQueryCondition(scope, relation.AssociationForeignDBNames))
+		values = []interface{}{pq.Array(toQueryValues(primaryKeys))}
+	} else {
+		query = fmt.Sprintf("%v IN (%v)", toQueryCondition(scope, relation.AssociationForeignDBNames), toQueryMarks(primaryKeys))
+		values = toQueryValues(primaryKeys)
+	}
 	results := makeSlice(field.Struct.Type)
-	scope.Err(preloadDB.Where(fmt.Sprintf("%v IN (%v)", toQueryCondition(scope, relation.AssociationForeignDBNames), toQueryMarks(primaryKeys)), toQueryValues(primaryKeys)...).Find(results, preloadConditions...).Error)
+	scope.Err(preloadDB.Where(query, values...).Find(results, preloadConditions...).Error)
 
 	// assign find results
 	var (
